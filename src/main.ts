@@ -17,27 +17,44 @@ async function getCommitHash(ref: string): Promise<string> {
 async function getLatestTaggedCommit(
     prefix: string
 ): Promise<[string, string]> {
-    const output = await exec.getExecOutput('git', [
-        'for-each-ref',
-        '--count=2',
-        '--sort=-creatordate',
-        "--format='%(refname)'",
-        `'refs/tags/${prefix}*'`
-    ]);
+    let stdout = '';
+    let stderr = '';
 
-    if (output.exitCode === 0) {
-        core.debug(`Diff between: ${output.stdout}`);
+    const exit_code = await exec.exec(
+        'git',
+        [
+            'for-each-ref',
+            '--count=2',
+            '--sort=-creatordate',
+            "--format='%(refname)'",
+            `'refs/tags/${prefix}*'`
+        ],
+        {
+            listeners: {
+                stdline: data => {
+                    stdout += data;
+                },
+                errline: data => {
+                    stderr += data;
+                }
+            }
+        }
+    );
+
+    if (exit_code === 0) {
+        core.debug(`Diff between: ${stdout}`);
 
         const [current, latest] = await Promise.all(
-            output.stdout
+            stdout
                 .trim()
                 .split('\n')
+                .slice(0, 2)
                 .map(async tag => getCommitHash(tag))
         );
 
         return [current, latest];
     } else {
-        throw new Error(output.stderr);
+        throw new Error(stderr);
     }
 }
 

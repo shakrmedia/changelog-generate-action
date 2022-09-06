@@ -56,23 +56,35 @@ function getCommitHash(ref) {
 }
 function getLatestTaggedCommit(prefix) {
     return __awaiter(this, void 0, void 0, function* () {
-        const output = yield exec.getExecOutput('git', [
+        let stdout = '';
+        let stderr = '';
+        const exit_code = yield exec.exec('git', [
             'for-each-ref',
             '--count=2',
             '--sort=-creatordate',
             "--format='%(refname)'",
             `'refs/tags/${prefix}*'`
-        ]);
-        if (output.exitCode === 0) {
-            core.debug(`Diff between: ${output.stdout}`);
-            const [current, latest] = yield Promise.all(output.stdout
+        ], {
+            listeners: {
+                stdline: data => {
+                    stdout += data;
+                },
+                errline: data => {
+                    stderr += data;
+                }
+            }
+        });
+        if (exit_code === 0) {
+            core.debug(`Diff between: ${stdout}`);
+            const [current, latest] = yield Promise.all(stdout
                 .trim()
                 .split('\n')
+                .slice(0, 2)
                 .map((tag) => __awaiter(this, void 0, void 0, function* () { return getCommitHash(tag); })));
             return [current, latest];
         }
         else {
-            throw new Error(output.stderr);
+            throw new Error(stderr);
         }
     });
 }
