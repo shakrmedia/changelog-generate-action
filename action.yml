@@ -1,11 +1,20 @@
-name: 'Your name here'
-description: 'Provide a description here'
-author: 'Your name or organization here'
+name: 'Shakr Changelog Generator'
+description: 'Github Actions that generates changelog for Shakr platform updates'
+author: 'jeonghwan@sha.kr'
 inputs:
-  milliseconds: # change this
+  repository_name:
     required: true
-    description: 'input description here'
-    default: 'default value if applicable'
+    description: 'Github Repository name for compare url'
+  application_name:
+    description: 'Title of the application'
+  tag_prefix:
+    required: true
+    description: 'Prefix of git tags to mark releases'
+    default: 'release-'
+  scope:
+    description: 'target scope that needs to be included in changelog'
+  dependent_scopes:
+    description: 'dependant target scope that needs to be included in changelog'
 runs:
   using: 'node16'
   main: 'dist/index.js'
