@@ -64,6 +64,7 @@ function getLatestTaggedCommit(prefix) {
             `'refs/tags/${prefix}*'`
         ]);
         if (output.exitCode === 0) {
+            core.debug(`Diff between: ${output.stdout}`);
             const [current, latest] = yield Promise.all(output.stdout
                 .trim()
                 .split('\n')
