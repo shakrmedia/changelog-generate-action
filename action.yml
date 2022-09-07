@@ -2,9 +2,9 @@ name: 'Shakr Changelog Generator'
 description: 'Github Actions that generates changelog for Shakr platform updates'
 author: 'jeonghwan@sha.kr'
 inputs:
-  repository_name:
+  token:
     required: true
-    description: 'Github Repository name for compare url'
+    description: 'Github Token'
   application_name:
     description: 'Title of the application'
   tag_prefix:

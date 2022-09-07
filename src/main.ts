@@ -1,76 +1,59 @@
 import * as core from '@actions/core';
-import * as exec from '@actions/exec';
+import * as github from '@actions/github';
 import * as parser from 'conventional-commits-parser';
 
-const DELIMITER = '------------------------ >8 ------------------------';
-
-async function getCommitHash(ref: string): Promise<string> {
-    const output = await exec.getExecOutput('git', ['rev-parse', ref]);
-
-    if (output.exitCode === 0) {
-        return output.stdout.trim();
-    } else {
-        throw new Error(output.stderr);
-    }
-}
-
 async function getLatestTaggedCommit(
+    token: string,
     prefix: string
 ): Promise<[string, string]> {
-    let stdout = '';
-    let stderr = '';
+    const octokit = github.getOctokit(token);
+    let matched_tags: {name: string; commit: {sha: string}}[] = [];
+    let page = 1;
 
-    const exit_code = await exec.exec(
-        'git',
-        [
-            'for-each-ref',
-            '--count=2',
-            '--sort=-creatordate',
-            "--format='%(refname)'",
-            `'refs/tags/${prefix}*'`
-        ],
-        {
-            listeners: {
-                stdline: data => {
-                    stdout += data;
-                },
-                errline: data => {
-                    stderr += data;
-                }
-            }
+    while (matched_tags.length < 2) {
+        const {data} = await octokit.rest.repos.listTags({
+            ...github.context.repo,
+            per_page: 100,
+            page
+        });
+        const matched = data
+            .filter(tag => tag.name.startsWith(prefix))
+            .slice(0, 2);
+
+        matched_tags = matched_tags.concat(matched);
+        page++;
+
+        if (data.length < 100) {
+            break;
         }
-    );
-
-    if (exit_code === 0) {
-        core.debug(`Diff between: ${stdout}`);
-
-        const [current, latest] = await Promise.all(
-            stdout
-                .trim()
-                .split('\n')
-                .slice(0, 2)
-                .map(async tag => getCommitHash(tag))
-        );
-
-        return [current, latest];
-    } else {
-        throw new Error(stderr);
     }
+
+    if (matched_tags.length < 2) {
+        throw new Error('Could not found matched tags');
+    }
+
+    return matched_tags.map(tag => tag.commit.sha) as [string, string];
 }
 
-async function getCommits(from: string, to: string): Promise<string[]> {
-    const output = await exec.getExecOutput('git', [
-        'log',
-        from,
-        to,
-        `--format=%B%n${DELIMITER}`
-    ]);
+async function getCommits(
+    token: string,
+    from: string,
+    to: string
+): Promise<{
+    url: string;
+    messages: string[];
+}> {
+    const octokit = github.getOctokit(token);
+    const {data} = await octokit.rest.repos.compareCommits({
+        ...github.context.repo,
+        base: from,
+        head: to
+    });
 
-    if (output.exitCode === 0) {
-        return output.stdout.trim().split(`${DELIMITER}\n`);
-    } else {
-        throw new Error(output.stderr);
-    }
+    return {
+        url: data.url,
+        messages: data.commits.map(commit => commit.commit.message)
+    };
 }
 
 const support_types = ['feat', 'fix'];
@@ -155,17 +138,18 @@ function getMessages(
 
 async function run(): Promise<void> {
     try {
-        const repository_name = core.getInput('repository_name');
+        const token = core.getInput('token');
         const deploy_url = core.getInput('deploy_url');
         const tag_prefix = core.getInput('tag_prefix');
         const scope = core.getInput('scope');
         const dependent_scopes = core.getInput('dependent_scopes').split(',');
 
         const [commit_from, commit_to] = await getLatestTaggedCommit(
+            token,
             tag_prefix
         );
-        const commits = await getCommits(commit_from, commit_to);
-        const parsed_commits = commits.map(commit =>
+        const {url, messages} = await getCommits(token, commit_from, commit_to);
+        const parsed_commits = messages.map(commit =>
             parser.sync(commit, {noteKeywords: ['Internal-Commit']})
         );
 
@@ -189,10 +173,7 @@ async function run(): Promise<void> {
 Project: ${scope}
 From: ${commit_from}
 To: ${commit_to}
-Compare URL: https://github.com/shakrmedia/${repository_name}/compare/${commit_from.slice(
-            0,
-            7
-        )}...${commit_to.slice(0, 7)}
+Compare URL: ${url}
 
 Changelog:
 
