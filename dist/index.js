@@ -151,7 +151,7 @@ function run() {
                 return result_messages;
             }, getMessages(scope, parsed_commits));
             const full_content = `
-##${application_name} ${version} (${getDateString()})
+## ${application_name} ${version} (${getDateString()})
 Compare URL: ${url}
 
 ${getContent(type_message_map)}

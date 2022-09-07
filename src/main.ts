@@ -181,7 +181,7 @@ async function run(): Promise<void> {
         );
 
         const full_content = `
-##${application_name} ${version} (${getDateString()})
+## ${application_name} ${version} (${getDateString()})
 Compare URL: ${url}
 
 ${getContent(type_message_map)}
