@@ -62,7 +62,11 @@ function getLatestTaggedCommit(token, prefix) {
             throw new Error('Could not found matched tags');
         }
         const tag_commits = matched_tags.map(tag => tag.commit.sha);
-        return [tag_commits[1], tag_commits[0]];
+        const version = matched_tags[0].name.replace(prefix, '');
+        return {
+            version,
+            sha: [tag_commits[1], tag_commits[0]]
+        };
     });
 }
 function getCommits(token, from, to) {
@@ -134,9 +138,11 @@ function run() {
             const tag_prefix = core.getInput('tag_prefix');
             const scope = core.getInput('scope');
             const dependent_scopes = core.getInput('dependent_scopes').split(',');
-            const [commit_from, commit_to] = yield getLatestTaggedCommit(token, tag_prefix);
+            const { version, sha: [commit_from, commit_to] } = yield getLatestTaggedCommit(token, tag_prefix);
             const { url, messages } = yield getCommits(token, commit_from, commit_to);
-            const parsed_commits = messages.map(commit => parser.sync(commit, { noteKeywords: ['Internal-Commit'] }));
+            const parsed_commits = messages.map(commit => parser.sync(commit, {
+                noteKeywords: ['Internal-Commit', 'BREAKING CHANGE']
+            }));
             const type_message_map = dependent_scopes.reduce((result_messages, associated_project) => {
                 const sub_messages = getMessages(associated_project, parsed_commits, true);
                 for (const type of support_types) {
@@ -145,18 +151,13 @@ function run() {
                 return result_messages;
             }, getMessages(scope, parsed_commits));
             const full_content = `
-Project: ${scope}
-From: ${commit_from}
-To: ${commit_to}
+##${deploy_url} ${version} (${getDateString()})
 Compare URL: ${url}
-
-Changelog:
-
-*${getDateString()}* ${`${deploy_url} (version ${commit_to.slice(0, 7)})`}
 
 ${getContent(type_message_map)}
 `.trim();
             core.debug(full_content);
+            yield github.getOctokit(token).rest.repos.createCommitComment(Object.assign(Object.assign({}, github.context.repo), { commit_sha: commit_to, body: full_content }));
         }
         catch (error) {
             if (error instanceof Error)
