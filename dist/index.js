@@ -137,14 +137,13 @@ function run() {
             const [commit_from, commit_to] = yield getLatestTaggedCommit(token, tag_prefix);
             const { url, messages } = yield getCommits(token, commit_from, commit_to);
             const parsed_commits = messages.map(commit => parser.sync(commit, { noteKeywords: ['Internal-Commit'] }));
-            const content = getContent(getMessages(scope, parsed_commits));
-            const associated_project_content = dependent_scopes.reduce((result, associated_project) => {
-                const sub_content = getContent(getMessages(associated_project, parsed_commits, true));
-                if (sub_content) {
-                    return result + sub_content;
+            const type_message_map = dependent_scopes.reduce((result_messages, associated_project) => {
+                const sub_messages = getMessages(associated_project, parsed_commits, true);
+                for (const type of support_types) {
+                    result_messages[type] = (result_messages[type] || []).concat(sub_messages[type] || []);
                 }
-                return result;
-            }, '');
+                return result_messages;
+            }, getMessages(scope, parsed_commits));
             const full_content = `
 Project: ${scope}
 From: ${commit_from}
@@ -155,7 +154,7 @@ Changelog:
 
 *${getDateString()}* ${`${deploy_url} (version ${commit_to.slice(0, 7)})`}
 
-${content}${associated_project_content}
+${getContent(type_message_map)}
 `.trim();
             core.debug(full_content);
         }
