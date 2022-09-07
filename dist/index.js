@@ -134,7 +134,7 @@ function run() {
     return __awaiter(this, void 0, void 0, function* () {
         try {
             const token = core.getInput('token');
-            const deploy_url = core.getInput('deploy_url');
+            const application_name = core.getInput('application_name');
             const tag_prefix = core.getInput('tag_prefix');
             const scope = core.getInput('scope');
             const dependent_scopes = core.getInput('dependent_scopes').split(',');
@@ -151,7 +151,7 @@ function run() {
                 return result_messages;
             }, getMessages(scope, parsed_commits));
             const full_content = `
-##${deploy_url} ${version} (${getDateString()})
+##${application_name} ${version} (${getDateString()})
 Compare URL: ${url}
 
 ${getContent(type_message_map)}

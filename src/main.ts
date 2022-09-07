@@ -145,7 +145,7 @@ function getMessages(
 async function run(): Promise<void> {
     try {
         const token = core.getInput('token');
-        const deploy_url = core.getInput('deploy_url');
+        const application_name = core.getInput('application_name');
         const tag_prefix = core.getInput('tag_prefix');
         const scope = core.getInput('scope');
         const dependent_scopes = core.getInput('dependent_scopes').split(',');
@@ -181,7 +181,7 @@ async function run(): Promise<void> {
         );
 
         const full_content = `
-##${deploy_url} ${version} (${getDateString()})
+##${application_name} ${version} (${getDateString()})
 Compare URL: ${url}
 
 ${getContent(type_message_map)}
