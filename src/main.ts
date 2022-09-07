@@ -5,7 +5,7 @@ import * as parser from 'conventional-commits-parser';
 async function getLatestTaggedCommit(
     token: string,
     prefix: string
-): Promise<[string, string]> {
+): Promise<{version: string; sha: [string, string]}> {
     const octokit = github.getOctokit(token);
     let matched_tags: {name: string; commit: {sha: string}}[] = [];
     let page = 1;
@@ -33,8 +33,12 @@ async function getLatestTaggedCommit(
     }
 
     const tag_commits = matched_tags.map(tag => tag.commit.sha);
+    const version = matched_tags[0].name.replace(prefix, '');
 
-    return [tag_commits[1], tag_commits[0]];
+    return {
+        version,
+        sha: [tag_commits[1], tag_commits[0]]
+    };
 }
 
 async function getCommits(
@@ -146,13 +150,15 @@ async function run(): Promise<void> {
         const scope = core.getInput('scope');
         const dependent_scopes = core.getInput('dependent_scopes').split(',');
 
-        const [commit_from, commit_to] = await getLatestTaggedCommit(
-            token,
-            tag_prefix
-        );
+        const {
+            version,
+            sha: [commit_from, commit_to]
+        } = await getLatestTaggedCommit(token, tag_prefix);
         const {url, messages} = await getCommits(token, commit_from, commit_to);
         const parsed_commits = messages.map(commit =>
-            parser.sync(commit, {noteKeywords: ['Internal-Commit']})
+            parser.sync(commit, {
+                noteKeywords: ['Internal-Commit', 'BREAKING CHANGE']
+            })
         );
 
         const type_message_map = dependent_scopes.reduce(
@@ -175,19 +181,19 @@ async function run(): Promise<void> {
         );
 
         const full_content = `
-Project: ${scope}
-From: ${commit_from}
-To: ${commit_to}
+##${deploy_url} ${version} (${getDateString()})
 Compare URL: ${url}
-
-Changelog:
-
-*${getDateString()}* ${`${deploy_url} (version ${commit_to.slice(0, 7)})`}
 
 ${getContent(type_message_map)}
 `.trim();
 
         core.debug(full_content);
+
+        await github.getOctokit(token).rest.repos.createCommitComment({
+            ...github.context.repo,
+            commit_sha: commit_to,
+            body: full_content
+        });
     } catch (error) {
         if (error instanceof Error) core.setFailed(error.message);
     }
