@@ -32,7 +32,9 @@ async function getLatestTaggedCommit(
         throw new Error('Could not found matched tags');
     }
 
-    return matched_tags.map(tag => tag.commit.sha) as [string, string];
+    const tag_commits = matched_tags.map(tag => tag.commit.sha);
+
+    return [tag_commits[1], tag_commits[0]];
 }
 
 async function getCommits(
@@ -51,7 +53,7 @@ async function getCommits(
     });
 
     return {
-        url: data.url,
+        url: data.html_url,
         messages: data.commits.map(commit => commit.commit.message)
     };
 }
