@@ -61,7 +61,8 @@ function getLatestTaggedCommit(token, prefix) {
         if (matched_tags.length < 2) {
             throw new Error('Could not found matched tags');
         }
-        return matched_tags.map(tag => tag.commit.sha);
+        const tag_commits = matched_tags.map(tag => tag.commit.sha);
+        return [tag_commits[1], tag_commits[0]];
     });
 }
 function getCommits(token, from, to) {
@@ -69,7 +70,7 @@ function getCommits(token, from, to) {
         const octokit = github.getOctokit(token);
         const { data } = yield octokit.rest.repos.compareCommits(Object.assign(Object.assign({}, github.context.repo), { base: from, head: to }));
         return {
-            url: data.url,
+            url: data.html_url,
             messages: data.commits.map(commit => commit.commit.message)
         };
     });
