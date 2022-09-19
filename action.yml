@@ -8,9 +8,7 @@ inputs:
   application_name:
     description: 'Title of the application'
   tag_prefix:
-    required: true
     description: 'Prefix of git tags to mark releases'
-    default: 'release-'
   scope:
     description: 'target scope that needs to be included in changelog'
   dependent_scopes:

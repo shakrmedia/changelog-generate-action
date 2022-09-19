@@ -42,42 +42,42 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 const core = __importStar(__nccwpck_require__(2186));
 const github = __importStar(__nccwpck_require__(5438));
 const parser = __importStar(__nccwpck_require__(1655));
-function createRelease(token, tag_name, body) {
+function findPreviousRelease(token, tag_prefix) {
+    var _a;
     return __awaiter(this, void 0, void 0, function* () {
         const octokit = github.getOctokit(token);
-        yield octokit.rest.repos.createRelease(Object.assign(Object.assign({}, github.context.repo), { tag_name,
-            body }));
-    });
-}
-function getLatestTaggedCommit(token, prefix) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const octokit = github.getOctokit(token);
-        let matched_tags = [];
+        let previous_release_tag = null;
         let page = 1;
-        while (matched_tags.length < 2) {
-            const { data } = yield octokit.rest.repos.listTags(Object.assign(Object.assign({}, github.context.repo), { per_page: 100, page }));
-            const matched = data.filter(tag => tag.name.startsWith(prefix)).slice(0, 2);
-            matched_tags = matched_tags.concat(matched);
+        const current_tag_name = github.context.ref.replace('refs/tags/', '');
+        while (!previous_release_tag) {
+            const { data } = yield octokit.rest.repos.listReleases(Object.assign(Object.assign({}, github.context.repo), { per_page: 100, page }));
+            previous_release_tag =
+                (_a = data
+                    .map(release => release.tag_name)
+                    .find(tag_name => tag_name !== current_tag_name && tag_name.startsWith(tag_prefix))) !== null && _a !== void 0 ? _a : null;
             page++;
             if (data.length < 100) {
                 break;
             }
         }
-        if (matched_tags.length < 2) {
-            throw new Error('Could not found matched tags');
+        if (!previous_release_tag) {
+            throw new Error('Could not found previous release');
         }
-        const tag_commits = matched_tags.map(tag => tag.commit.sha);
-        const version = matched_tags[0].name.replace(prefix, '');
+        const [[from_commit, to_commit], { data: { id: target_release_id } }] = yield Promise.all([
+            Promise.all([previous_release_tag, current_tag_name].map((tag_name) => __awaiter(this, void 0, void 0, function* () { return octokit.rest.git.getRef(Object.assign(Object.assign({}, github.context.repo), { ref: `ref/tags/${tag_name}` })); }))),
+            octokit.rest.repos.getReleaseByTag(Object.assign(Object.assign({}, github.context.repo), { tag: current_tag_name }))
+        ]);
         return {
-            version,
-            sha: [tag_commits[1], tag_commits[0]]
+            target_release_id,
+            version: current_tag_name.replace(tag_prefix, ''),
+            sha: [from_commit.data.object.sha, to_commit.data.object.sha]
         };
     });
 }
 function getCommits(token, from, to) {
     return __awaiter(this, void 0, void 0, function* () {
         const octokit = github.getOctokit(token);
-        const { data } = yield octokit.rest.repos.compareCommits(Object.assign(Object.assign({}, github.context.repo), { base: from, head: to }));
+        const { data } = yield octokit.rest.repos.compareCommits(Object.assign(Object.assign({}, github.context.repo), { base: from, head: to, per_page: 100 }));
         return {
             url: data.html_url,
             messages: data.commits.map(commit => commit.commit.message)
@@ -141,7 +141,7 @@ function run() {
             const tag_prefix = core.getInput('tag_prefix');
             const scope = core.getInput('scope');
             const dependent_scopes = core.getInput('dependent_scopes').split(',');
-            const { version, sha: [commit_from, commit_to] } = yield getLatestTaggedCommit(token, tag_prefix);
+            const { target_release_id, version, sha: [commit_from, commit_to] } = yield findPreviousRelease(token, tag_prefix);
             const { url, messages } = yield getCommits(token, commit_from, commit_to);
             const parsed_commits = messages.map(commit => parser.sync(commit, {
                 noteKeywords: ['Internal-Commit', 'BREAKING CHANGE']
@@ -160,7 +160,7 @@ Compare URL: ${url}
 ${getContent(type_message_map)}
 `.trim();
             core.debug(full_content);
-            yield createRelease(token, `${tag_prefix}${version}`, full_content);
+            yield github.getOctokit(token).rest.repos.updateRelease(Object.assign(Object.assign({}, github.context.repo), { release_id: target_release_id, body: full_content }));
         }
         catch (error) {
             if (error instanceof Error)

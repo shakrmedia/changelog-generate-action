@@ -2,33 +2,32 @@ import * as core from '@actions/core';
 import * as github from '@actions/github';
 import * as parser from 'conventional-commits-parser';
 
-async function createRelease(token: string, tag_name: string, body: string): Promise<void> {
-    const octokit = github.getOctokit(token);
-
-    await octokit.rest.repos.createRelease({
-        ...github.context.repo,
-        tag_name,
-        body
-    });
-}
-
-async function getLatestTaggedCommit(
+async function findPreviousRelease(
     token: string,
-    prefix: string
-): Promise<{ version: string; sha: [string, string] }> {
+    tag_prefix: string
+): Promise<{
+    target_release_id: number;
+    version: string;
+    sha: [string, string];
+}> {
     const octokit = github.getOctokit(token);
-    let matched_tags: { name: string; commit: { sha: string } }[] = [];
+    let previous_release_tag: string | null = null;
     let page = 1;
+    const current_tag_name = github.context.ref.replace('refs/tags/', '');
 
-    while (matched_tags.length < 2) {
-        const { data } = await octokit.rest.repos.listTags({
+    while (!previous_release_tag) {
+        const { data } = await octokit.rest.repos.listReleases({
             ...github.context.repo,
             per_page: 100,
             page
         });
-        const matched = data.filter(tag => tag.name.startsWith(prefix)).slice(0, 2);
+        previous_release_tag =
+            data
+                .map(release => release.tag_name)
+                .find(
+                    tag_name => tag_name !== current_tag_name && tag_name.startsWith(tag_prefix)
+                ) ?? null;
 
-        matched_tags = matched_tags.concat(matched);
         page++;
 
         if (data.length < 100) {
@@ -36,16 +35,31 @@ async function getLatestTaggedCommit(
         }
     }
 
-    if (matched_tags.length < 2) {
-        throw new Error('Could not found matched tags');
+    if (!previous_release_tag) {
+        throw new Error('Could not found previous release');
     }
 
-    const tag_commits = matched_tags.map(tag => tag.commit.sha);
-    const version = matched_tags[0].name.replace(prefix, '');
+    const [
+        [from_commit, to_commit],
+        {
+            data: { id: target_release_id }
+        }
+    ] = await Promise.all([
+        Promise.all(
+            [previous_release_tag, current_tag_name].map(async tag_name =>
+                octokit.rest.git.getRef({ ...github.context.repo, ref: `ref/tags/${tag_name}` })
+            )
+        ),
+        octokit.rest.repos.getReleaseByTag({
+            ...github.context.repo,
+            tag: current_tag_name
+        })
+    ]);
 
     return {
-        version,
-        sha: [tag_commits[1], tag_commits[0]]
+        target_release_id,
+        version: current_tag_name.replace(tag_prefix, ''),
+        sha: [from_commit.data.object.sha, to_commit.data.object.sha]
     };
 }
 
@@ -61,7 +75,8 @@ async function getCommits(
     const { data } = await octokit.rest.repos.compareCommits({
         ...github.context.repo,
         base: from,
-        head: to
+        head: to,
+        per_page: 100
     });
 
     return {
@@ -152,9 +167,10 @@ async function run(): Promise<void> {
         const dependent_scopes = core.getInput('dependent_scopes').split(',');
 
         const {
+            target_release_id,
             version,
             sha: [commit_from, commit_to]
-        } = await getLatestTaggedCommit(token, tag_prefix);
+        } = await findPreviousRelease(token, tag_prefix);
         const { url, messages } = await getCommits(token, commit_from, commit_to);
         const parsed_commits = messages.map(commit =>
             parser.sync(commit, {
@@ -183,7 +199,11 @@ ${getContent(type_message_map)}
 
         core.debug(full_content);
 
-        await createRelease(token, `${tag_prefix}${version}`, full_content);
+        await github.getOctokit(token).rest.repos.updateRelease({
+            ...github.context.repo,
+            release_id: target_release_id,
+            body: full_content
+        });
     } catch (error) {
         if (error instanceof Error) core.setFailed(error.message);
     }
