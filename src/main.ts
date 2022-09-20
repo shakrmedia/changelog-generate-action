@@ -171,7 +171,14 @@ async function run(): Promise<void> {
             version,
             sha: [commit_from, commit_to]
         } = await findPreviousRelease(token, tag_prefix);
+
+        core.debug(`Found Previous Release: ${target_release_id}`);
+        core.debug(`Generate changelog from commit range: ${commit_from}...${commit_to}`);
+
         const { url, messages } = await getCommits(token, commit_from, commit_to);
+
+        core.debug('Fetched commit messages');
+
         const parsed_commits = messages.map(commit =>
             parser.sync(commit, {
                 noteKeywords: ['Internal-Commit', 'BREAKING CHANGE']
@@ -204,8 +211,10 @@ ${getContent(type_message_map)}
             release_id: target_release_id,
             body: full_content
         });
+
+        core.debug('Changelog posted to release body');
     } catch (error) {
-        if (error instanceof Error) core.setFailed(error.message);
+        if (error instanceof Error) core.setFailed(error);
     }
 }
 
