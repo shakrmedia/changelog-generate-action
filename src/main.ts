@@ -39,6 +39,9 @@ async function findPreviousRelease(
         throw new Error('Could not found previous release');
     }
 
+    core.debug(`Current Release Tag: ${current_tag_name}`);
+    core.debug(`Found Pevious Release Tag: ${previous_release_tag}`);
+
     const [
         [from_commit, to_commit],
         {
