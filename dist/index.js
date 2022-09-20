@@ -66,7 +66,7 @@ function findPreviousRelease(token, tag_prefix) {
         core.debug(`Current Release Tag: ${current_tag_name}`);
         core.debug(`Found Pevious Release Tag: ${previous_release_tag}`);
         const [[from_commit, to_commit], { data: { id: target_release_id } }] = yield Promise.all([
-            Promise.all([previous_release_tag, current_tag_name].map((tag_name) => __awaiter(this, void 0, void 0, function* () { return octokit.rest.git.getRef(Object.assign(Object.assign({}, github.context.repo), { ref: `ref/tags/${tag_name}` })); }))),
+            Promise.all([previous_release_tag, current_tag_name].map((tag_name) => __awaiter(this, void 0, void 0, function* () { return octokit.rest.git.getRef(Object.assign(Object.assign({}, github.context.repo), { ref: `tags/${tag_name}` })); }))),
             octokit.rest.repos.getReleaseByTag(Object.assign(Object.assign({}, github.context.repo), { tag: current_tag_name }))
         ]);
         return {

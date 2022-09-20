@@ -50,7 +50,7 @@ async function findPreviousRelease(
     ] = await Promise.all([
         Promise.all(
             [previous_release_tag, current_tag_name].map(async tag_name =>
-                octokit.rest.git.getRef({ ...github.context.repo, ref: `ref/tags/${tag_name}` })
+                octokit.rest.git.getRef({ ...github.context.repo, ref: `tags/${tag_name}` })
             )
         ),
         octokit.rest.repos.getReleaseByTag({
