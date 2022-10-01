@@ -143,6 +143,10 @@ function run() {
             const tag_prefix = core.getInput('tag_prefix');
             const scope = core.getInput('scope');
             const dependent_scopes = core.getInput('dependent_scopes').split(',');
+            if (!github.context.ref.startsWith(`refs/tags/${tag_prefix}`)) {
+                core.debug(`Git tag name (${github.context.ref.replace('refs/tags', '')}) isn't matched with tag_prefix config (${tag_prefix})`);
+                core.debug('Skipping action...');
+            }
             const { target_release_id, version, sha: [commit_from, commit_to] } = yield findPreviousRelease(token, tag_prefix);
             core.debug(`Found Previous Release: ${target_release_id}`);
             core.debug(`Generate changelog from commit range: ${commit_from}...${commit_to}`);

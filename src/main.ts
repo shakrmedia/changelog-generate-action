@@ -169,6 +169,16 @@ async function run(): Promise<void> {
         const scope = core.getInput('scope');
         const dependent_scopes = core.getInput('dependent_scopes').split(',');
 
+        if (!github.context.ref.startsWith(`refs/tags/${tag_prefix}`)) {
+            core.debug(
+                `Git tag name (${github.context.ref.replace(
+                    'refs/tags',
+                    ''
+                )}) isn't matched with tag_prefix config (${tag_prefix})`
+            );
+            core.debug('Skipping action...');
+        }
+
         const {
             target_release_id,
             version,
