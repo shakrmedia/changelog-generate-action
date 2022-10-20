@@ -177,6 +177,8 @@ async function run(): Promise<void> {
                 )}) isn't matched with tag_prefix config (${tag_prefix})`
             );
             core.debug('Skipping action...');
+
+            return;
         }
 
         const {

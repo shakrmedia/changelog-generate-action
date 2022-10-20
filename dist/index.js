@@ -146,6 +146,7 @@ function run() {
             if (!github.context.ref.startsWith(`refs/tags/${tag_prefix}`)) {
                 core.debug(`Git tag name (${github.context.ref.replace('refs/tags', '')}) isn't matched with tag_prefix config (${tag_prefix})`);
                 core.debug('Skipping action...');
+                return;
             }
             const { target_release_id, version, sha: [commit_from, commit_to] } = yield findPreviousRelease(token, tag_prefix);
             core.debug(`Found Previous Release: ${target_release_id}`);
