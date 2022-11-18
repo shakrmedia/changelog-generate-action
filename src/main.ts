@@ -1,6 +1,49 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
 import * as parser from 'conventional-commits-parser';
+import { LinearClient } from '@linear/sdk';
+
+async function markLinearIssuesAsDone(
+    token: string,
+    linear_api_key: string,
+    commit_shas: string[]
+): Promise<void> {
+    const octokit = github.getOctokit(token);
+    const associated_pr_bodies = await Promise.all(
+        commit_shas.map(async commit_sha => {
+            const res = await octokit.rest.repos.listPullRequestsAssociatedWithCommit({
+                ...github.context.repo,
+                commit_sha
+            });
+
+            return res.data[0].body;
+        })
+    );
+    const linear_issues = [
+        ...new Set(
+            associated_pr_bodies
+                .filter((body): body is string => !!body)
+                .map(body => body.match(/Resolves\s([A-Z0-9]+-[0-9]+)/)?.[1])
+                .filter((issue): issue is string => !!issue)
+        )
+    ];
+
+    const client = new LinearClient({ apiKey: linear_api_key });
+    const [{ nodes: issues }, { nodes: states }] = await Promise.all([
+        client.issues({ filter: { id: { in: linear_issues } } }),
+        client.workflowStates()
+    ]);
+    const done_state = states.find(state => state.name === 'Done');
+
+    if (!done_state) {
+        throw new Error('Couldn\'t find "Done" state from Linear workspace');
+    }
+
+    // eslint-disable-next-line @typescript-eslint/promise-function-async
+    await Promise.all(issues.map(node => node.update({ stateId: done_state.id })));
+
+    core.debug('Mark linked Linear issues as done');
+}
 
 async function findPreviousRelease(
     token: string,
@@ -72,6 +115,7 @@ async function getCommits(
     to: string
 ): Promise<{
     url: string;
+    commit_shas: string[];
     messages: string[];
 }> {
     const octokit = github.getOctokit(token);
@@ -84,6 +128,7 @@ async function getCommits(
 
     return {
         url: data.html_url,
+        commit_shas: data.commits.map(commit => commit.sha),
         messages: data.commits.map(commit => commit.commit.message)
     };
 }
@@ -164,6 +209,7 @@ function getMessages(
 async function run(): Promise<void> {
     try {
         const token = core.getInput('token');
+        const linear_api_key = core.getInput('linear_api_key');
         const application_name = core.getInput('application_name');
         const tag_prefix = core.getInput('tag_prefix');
         const scope = core.getInput('scope');
@@ -190,7 +236,7 @@ async function run(): Promise<void> {
         core.debug(`Found Previous Release: ${target_release_id}`);
         core.debug(`Generate changelog from commit range: ${commit_from}...${commit_to}`);
 
-        const { url, messages } = await getCommits(token, commit_from, commit_to);
+        const { url, commit_shas, messages } = await getCommits(token, commit_from, commit_to);
 
         core.debug('Fetched commit messages');
 
@@ -228,6 +274,10 @@ ${getContent(type_message_map)}
         });
 
         core.debug('Changelog posted to release body');
+
+        if (linear_api_key) {
+            await markLinearIssuesAsDone(token, linear_api_key, commit_shas);
+        }
     } catch (error) {
         if (error instanceof Error) core.setFailed(error);
     }
