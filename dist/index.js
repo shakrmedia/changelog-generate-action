@@ -43,6 +43,23 @@ const core = __importStar(__nccwpck_require__(2186));
 const github = __importStar(__nccwpck_require__(5438));
 const parser = __importStar(__nccwpck_require__(1655));
 const sdk_1 = __nccwpck_require__(8851);
+function getTeamStateIdMap(client) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const { nodes: states } = yield client.workflowStates();
+        const done_states = states.filter(state => state.name === 'Done');
+        if (done_states.length === 0) {
+            throw new Error('Couldn\'t find "Done" state from Linear workspace');
+        }
+        const team_state_pairs = yield Promise.all(done_states.map((done_state) => __awaiter(this, void 0, void 0, function* () {
+            const team = yield done_state.team;
+            if (!team) {
+                return null;
+            }
+            return [team.id, done_state.id];
+        })));
+        return new Map(team_state_pairs.filter((pair) => !!pair));
+    });
+}
 function markLinearIssuesAsDone(token, linear_api_key, commit_shas) {
     return __awaiter(this, void 0, void 0, function* () {
         const octokit = github.getOctokit(token);
@@ -57,16 +74,17 @@ function markLinearIssuesAsDone(token, linear_api_key, commit_shas) {
                 .filter((issue) => !!issue))
         ];
         const client = new sdk_1.LinearClient({ apiKey: linear_api_key });
-        const [{ nodes: issues }, { nodes: states }] = yield Promise.all([
-            client.issues({ filter: { id: { in: linear_issues } } }),
-            client.workflowStates()
+        const [issues, team_state_id_map] = yield Promise.all([
+            // eslint-disable-next-line @typescript-eslint/promise-function-async
+            Promise.all(linear_issues.map(issue_id => client.issue(issue_id))),
+            getTeamStateIdMap(client)
         ]);
-        const done_state = states.find(state => state.name === 'Done');
-        if (!done_state) {
-            throw new Error('Couldn\'t find "Done" state from Linear workspace');
-        }
-        // eslint-disable-next-line @typescript-eslint/promise-function-async
-        yield Promise.all(issues.map(node => node.update({ stateId: done_state.id })));
+        core.debug('Fetch issues and workflow states from Linear');
+        yield Promise.all(issues.map((node) => __awaiter(this, void 0, void 0, function* () {
+            var _a;
+            const team = yield node.team;
+            yield node.update({ stateId: team_state_id_map.get((_a = team === null || team === void 0 ? void 0 : team.id) !== null && _a !== void 0 ? _a : '') });
+        })));
         core.debug('Mark linked Linear issues as done');
     });
 }

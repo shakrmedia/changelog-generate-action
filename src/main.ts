@@ -3,6 +3,30 @@ import * as github from '@actions/github';
 import * as parser from 'conventional-commits-parser';
 import { LinearClient } from '@linear/sdk';
 
+async function getTeamStateIdMap(client: LinearClient): Promise<Map<string, string>> {
+    const { nodes: states } = await client.workflowStates();
+
+    const done_states = states.filter(state => state.name === 'Done');
+
+    if (done_states.length === 0) {
+        throw new Error('Couldn\'t find "Done" state from Linear workspace');
+    }
+
+    const team_state_pairs = await Promise.all(
+        done_states.map(async done_state => {
+            const team = await done_state.team;
+
+            if (!team) {
+                return null;
+            }
+
+            return [team.id, done_state.id] as const;
+        })
+    );
+
+    return new Map(team_state_pairs.filter((pair): pair is [string, string] => !!pair));
+}
+
 async function markLinearIssuesAsDone(
     token: string,
     linear_api_key: string,
@@ -29,18 +53,21 @@ async function markLinearIssuesAsDone(
     ];
 
     const client = new LinearClient({ apiKey: linear_api_key });
-    const [{ nodes: issues }, { nodes: states }] = await Promise.all([
-        client.issues({ filter: { id: { in: linear_issues } } }),
-        client.workflowStates()
+    const [issues, team_state_id_map] = await Promise.all([
+        // eslint-disable-next-line @typescript-eslint/promise-function-async
+        Promise.all(linear_issues.map(issue_id => client.issue(issue_id))),
+        getTeamStateIdMap(client)
     ]);
-    const done_state = states.find(state => state.name === 'Done');
 
-    if (!done_state) {
-        throw new Error('Couldn\'t find "Done" state from Linear workspace');
-    }
+    core.debug('Fetch issues and workflow states from Linear');
 
-    // eslint-disable-next-line @typescript-eslint/promise-function-async
-    await Promise.all(issues.map(node => node.update({ stateId: done_state.id })));
+    await Promise.all(
+        issues.map(async node => {
+            const team = await node.team;
+
+            await node.update({ stateId: team_state_id_map.get(team?.id ?? '') });
+        })
+    );
 
     core.debug('Mark linked Linear issues as done');
 }
