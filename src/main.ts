@@ -240,7 +240,10 @@ async function run(): Promise<void> {
         const application_name = core.getInput('application_name');
         const tag_prefix = core.getInput('tag_prefix');
         const scope = core.getInput('scope');
-        const dependent_scopes = core.getInput('dependent_scopes').split(',');
+        const dependent_scopes_str = core.getInput('dependent_scopes');
+        const dependent_scopes = dependent_scopes_str
+            .split(',')
+            .filter(dependent_scope => !!dependent_scope);
 
         if (!github.context.ref.startsWith(`refs/tags/${tag_prefix}`)) {
             core.debug(
