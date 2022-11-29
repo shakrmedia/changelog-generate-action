@@ -40,7 +40,7 @@ async function markLinearIssuesAsDone(
                 commit_sha
             });
 
-            return res.data[0].body;
+            return res.data.length > 0 ? res.data[0].body : null;
         })
     );
     const linear_issues = [
