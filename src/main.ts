@@ -201,7 +201,12 @@ function getMessage(
     target_scope: string,
     { type, scope, subject }: parser.Commit<string>
 ): { type: string; text: string } | null {
-    if (type && subject && (scope === target_scope || (!scope && !target_scope))) {
+    if (
+        type &&
+        support_types.includes(type) &&
+        subject &&
+        (scope === target_scope || (!scope && !target_scope))
+    ) {
         return {
             type,
             text: `${subject.charAt(0).toUpperCase()}${subject.substring(1)}`
@@ -215,10 +220,7 @@ function getMessages(project: string, commits: parser.Commit[]): { [key: string]
     return commits
         .filter(({ footer }) => !footer || !footer.startsWith('Internal-commit:'))
         .map(commit_data => getMessage(project, commit_data))
-        .filter(
-            (message): message is NonNullable<typeof message> =>
-                !!message && support_types.includes(message.type)
-        )
+        .filter((message): message is NonNullable<typeof message> => !!message)
         .reduce<{ [key: string]: string[] }>((messages, { type, text }) => {
             messages[type] = messages[type] || [];
 
