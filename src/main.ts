@@ -239,8 +239,9 @@ async function run(): Promise<void> {
         const scope = core.getInput('scope');
         const dependent_scopes_str = core.getInput('dependent_scopes');
         const dependent_scopes = dependent_scopes_str
+            .trim()
             .split(',')
-            .filter(dependent_scope => !!dependent_scope);
+            .filter(dependent_scope => !!dependent_scope.trim());
 
         if (!github.context.ref.startsWith(`refs/tags/${tag_prefix}`)) {
             core.debug(
