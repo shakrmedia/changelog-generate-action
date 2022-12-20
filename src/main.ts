@@ -146,10 +146,9 @@ async function getCommits(
     messages: string[];
 }> {
     const octokit = github.getOctokit(token);
-    const { data } = await octokit.rest.repos.compareCommits({
+    const { data } = await octokit.rest.repos.compareCommitsWithBasehead({
         ...github.context.repo,
-        base: from,
-        head: to,
+        basehead: `${from}...${to}`,
         per_page: 100
     });
 
