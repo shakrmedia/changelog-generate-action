@@ -212,13 +212,9 @@ function getMessage(
     return null;
 }
 
-function getMessages(
-    project: string,
-    commits: parser.Commit[],
-    internal?: boolean
-): { [key: string]: string[] } {
+function getMessages(project: string, commits: parser.Commit[]): { [key: string]: string[] } {
     return commits
-        .filter(({ footer }) => !internal || !footer || !footer.startsWith('Internal-commit:'))
+        .filter(({ footer }) => !footer || !footer.startsWith('Internal-commit:'))
         .map(commit_data => getMessage(project, commit_data))
         .filter(
             (message): message is NonNullable<typeof message> =>
@@ -277,7 +273,7 @@ async function run(): Promise<void> {
         );
 
         const type_message_map = dependent_scopes.reduce((result_messages, associated_project) => {
-            const sub_messages = getMessages(associated_project, parsed_commits, true);
+            const sub_messages = getMessages(associated_project, parsed_commits);
 
             for (const type of support_types) {
                 result_messages[type] = (result_messages[type] || []).concat(
