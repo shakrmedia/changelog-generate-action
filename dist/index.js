@@ -29,109 +29,92 @@ var __importStar = (this && this.__importStar) || function (mod) {
     __setModuleDefault(result, mod);
     return result;
 };
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 const core = __importStar(__nccwpck_require__(2186));
 const github = __importStar(__nccwpck_require__(5438));
 const parser = __importStar(__nccwpck_require__(1655));
 const sdk_1 = __nccwpck_require__(8851);
-function getTeamStateIdMap(client) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const { nodes: states } = yield client.workflowStates();
-        const done_states = states.filter(state => state.name === 'Done');
-        if (done_states.length === 0) {
-            throw new Error('Couldn\'t find "Done" state from Linear workspace');
+async function getTeamStateIdMap(client) {
+    const { nodes: states } = await client.workflowStates();
+    const done_states = states.filter(state => state.name === 'Done');
+    if (done_states.length === 0) {
+        throw new Error('Couldn\'t find "Done" state from Linear workspace');
+    }
+    const team_state_pairs = await Promise.all(done_states.map(async (done_state) => {
+        const team = await done_state.team;
+        if (!team) {
+            return null;
         }
-        const team_state_pairs = yield Promise.all(done_states.map((done_state) => __awaiter(this, void 0, void 0, function* () {
-            const team = yield done_state.team;
-            if (!team) {
-                return null;
-            }
-            return [team.id, done_state.id];
-        })));
-        return new Map(team_state_pairs.filter((pair) => !!pair));
-    });
+        return [team.id, done_state.id];
+    }));
+    return new Map(team_state_pairs.filter((pair) => !!pair));
 }
-function markLinearIssuesAsDone(token, linear_api_key, commit_shas) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const octokit = github.getOctokit(token);
-        const associated_pr_bodies = yield Promise.all(commit_shas.map((commit_sha) => __awaiter(this, void 0, void 0, function* () {
-            const res = yield octokit.rest.repos.listPullRequestsAssociatedWithCommit(Object.assign(Object.assign({}, github.context.repo), { commit_sha }));
-            return res.data[0].body;
-        })));
-        const linear_issues = [
-            ...new Set(associated_pr_bodies
-                .filter((body) => !!body)
-                .map(body => { var _a; return (_a = body.match(/Resolves\s([A-Z0-9]+-[0-9]+)/)) === null || _a === void 0 ? void 0 : _a[1]; })
-                .filter((issue) => !!issue))
-        ];
-        const client = new sdk_1.LinearClient({ apiKey: linear_api_key });
-        const [issues, team_state_id_map] = yield Promise.all([
-            // eslint-disable-next-line @typescript-eslint/promise-function-async
-            Promise.all(linear_issues.map(issue_id => client.issue(issue_id))),
-            getTeamStateIdMap(client)
-        ]);
-        core.debug('Fetch issues and workflow states from Linear');
-        yield Promise.all(issues.map((node) => __awaiter(this, void 0, void 0, function* () {
-            var _a;
-            const team = yield node.team;
-            yield node.update({ stateId: team_state_id_map.get((_a = team === null || team === void 0 ? void 0 : team.id) !== null && _a !== void 0 ? _a : '') });
-        })));
-        core.debug('Mark linked Linear issues as done');
-    });
+async function markLinearIssuesAsDone(token, linear_api_key, commit_shas) {
+    const octokit = github.getOctokit(token);
+    const associated_pr_bodies = await Promise.all(commit_shas.map(async (commit_sha) => {
+        const res = await octokit.rest.repos.listPullRequestsAssociatedWithCommit(Object.assign(Object.assign({}, github.context.repo), { commit_sha }));
+        return res.data.length > 0 ? res.data[0].body : null;
+    }));
+    const linear_issues = [
+        ...new Set(associated_pr_bodies
+            .filter((body) => !!body)
+            .map(body => { var _a; return (_a = body.match(/Resolves\s([A-Z0-9]+-[0-9]+)/)) === null || _a === void 0 ? void 0 : _a[1]; })
+            .filter((issue) => !!issue))
+    ];
+    const client = new sdk_1.LinearClient({ apiKey: linear_api_key });
+    const [issues, team_state_id_map] = await Promise.all([
+        // eslint-disable-next-line @typescript-eslint/promise-function-async
+        Promise.all(linear_issues.map(issue_id => client.issue(issue_id))),
+        getTeamStateIdMap(client)
+    ]);
+    core.debug('Fetch issues and workflow states from Linear');
+    await Promise.all(issues.map(async (node) => {
+        var _a;
+        const team = await node.team;
+        await node.update({ stateId: team_state_id_map.get((_a = team === null || team === void 0 ? void 0 : team.id) !== null && _a !== void 0 ? _a : '') });
+    }));
+    core.debug('Mark linked Linear issues as done');
 }
-function findPreviousRelease(token, tag_prefix) {
+async function findPreviousRelease(token, tag_prefix) {
     var _a;
-    return __awaiter(this, void 0, void 0, function* () {
-        const octokit = github.getOctokit(token);
-        let previous_release_tag = null;
-        let page = 1;
-        const current_tag_name = github.context.ref.replace('refs/tags/', '');
-        while (!previous_release_tag) {
-            const { data } = yield octokit.rest.repos.listReleases(Object.assign(Object.assign({}, github.context.repo), { per_page: 100, page }));
-            previous_release_tag =
-                (_a = data
-                    .map(release => release.tag_name)
-                    .find(tag_name => tag_name !== current_tag_name && tag_name.startsWith(tag_prefix))) !== null && _a !== void 0 ? _a : null;
-            page++;
-            if (data.length < 100) {
-                break;
-            }
+    const octokit = github.getOctokit(token);
+    let previous_release_tag = null;
+    let page = 1;
+    const current_tag_name = github.context.ref.replace('refs/tags/', '');
+    while (!previous_release_tag) {
+        const { data } = await octokit.rest.repos.listReleases(Object.assign(Object.assign({}, github.context.repo), { per_page: 100, page }));
+        previous_release_tag =
+            (_a = data
+                .map(release => release.tag_name)
+                .find(tag_name => tag_name !== current_tag_name && tag_name.startsWith(tag_prefix))) !== null && _a !== void 0 ? _a : null;
+        page++;
+        if (data.length < 100) {
+            break;
         }
-        if (!previous_release_tag) {
-            throw new Error('Could not found previous release');
-        }
-        core.debug(`Current Release Tag: ${current_tag_name}`);
-        core.debug(`Found Pevious Release Tag: ${previous_release_tag}`);
-        const [[from_commit, to_commit], { data: { id: target_release_id } }] = yield Promise.all([
-            Promise.all([previous_release_tag, current_tag_name].map((tag_name) => __awaiter(this, void 0, void 0, function* () { return octokit.rest.git.getRef(Object.assign(Object.assign({}, github.context.repo), { ref: `tags/${tag_name}` })); }))),
-            octokit.rest.repos.getReleaseByTag(Object.assign(Object.assign({}, github.context.repo), { tag: current_tag_name }))
-        ]);
-        return {
-            target_release_id,
-            version: current_tag_name.replace(tag_prefix, ''),
-            sha: [from_commit.data.object.sha, to_commit.data.object.sha]
-        };
-    });
+    }
+    if (!previous_release_tag) {
+        throw new Error('Could not found previous release');
+    }
+    core.debug(`Current Release Tag: ${current_tag_name}`);
+    core.debug(`Found Pevious Release Tag: ${previous_release_tag}`);
+    const [[from_commit, to_commit], { data: { id: target_release_id } }] = await Promise.all([
+        Promise.all([previous_release_tag, current_tag_name].map(async (tag_name) => octokit.rest.git.getRef(Object.assign(Object.assign({}, github.context.repo), { ref: `tags/${tag_name}` })))),
+        octokit.rest.repos.getReleaseByTag(Object.assign(Object.assign({}, github.context.repo), { tag: current_tag_name }))
+    ]);
+    return {
+        target_release_id,
+        version: current_tag_name.replace(tag_prefix, ''),
+        sha: [from_commit.data.object.sha, to_commit.data.object.sha]
+    };
 }
-function getCommits(token, from, to) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const octokit = github.getOctokit(token);
-        const { data } = yield octokit.rest.repos.compareCommits(Object.assign(Object.assign({}, github.context.repo), { base: from, head: to, per_page: 100 }));
-        return {
-            url: data.html_url,
-            commit_shas: data.commits.map(commit => commit.sha),
-            messages: data.commits.map(commit => commit.commit.message)
-        };
-    });
+async function getCommits(token, from, to) {
+    const octokit = github.getOctokit(token);
+    const { data } = await octokit.rest.repos.compareCommitsWithBasehead(Object.assign(Object.assign({}, github.context.repo), { basehead: `${from}...${to}`, per_page: 100 }));
+    return {
+        url: data.html_url,
+        commit_shas: data.commits.map(commit => commit.sha),
+        messages: data.commits.map(commit => commit.commit.message)
+    };
 }
 const support_types = ['feat', 'fix'];
 const type_titles = {
@@ -163,7 +146,10 @@ function getContent(messages_with_type) {
     }, '');
 }
 function getMessage(target_scope, { type, scope, subject }) {
-    if (type && subject && (scope === target_scope || (!scope && !target_scope))) {
+    if (type &&
+        support_types.includes(type) &&
+        subject &&
+        (scope === target_scope || (!scope && !target_scope))) {
         return {
             type,
             text: `${subject.charAt(0).toUpperCase()}${subject.substring(1)}`
@@ -171,64 +157,66 @@ function getMessage(target_scope, { type, scope, subject }) {
     }
     return null;
 }
-function getMessages(project, commits, internal) {
+function getMessages(project, commits) {
     return commits
-        .filter(({ footer }) => !internal || !footer || !footer.startsWith('Internal-commit:'))
+        .filter(({ footer }) => !footer || !footer.startsWith('Internal-commit:'))
         .map(commit_data => getMessage(project, commit_data))
-        .filter((message) => !!message && support_types.includes(message.type))
+        .filter((message) => !!message)
         .reduce((messages, { type, text }) => {
         messages[type] = messages[type] || [];
         messages[type].push(text);
         return messages;
     }, {});
 }
-function run() {
-    return __awaiter(this, void 0, void 0, function* () {
-        try {
-            const token = core.getInput('token');
-            const linear_api_key = core.getInput('linear_api_key');
-            const application_name = core.getInput('application_name');
-            const tag_prefix = core.getInput('tag_prefix');
-            const scope = core.getInput('scope');
-            const dependent_scopes = core.getInput('dependent_scopes').split(',');
-            if (!github.context.ref.startsWith(`refs/tags/${tag_prefix}`)) {
-                core.debug(`Git tag name (${github.context.ref.replace('refs/tags', '')}) isn't matched with tag_prefix config (${tag_prefix})`);
-                core.debug('Skipping action...');
-                return;
+async function run() {
+    try {
+        const token = core.getInput('token');
+        const linear_api_key = core.getInput('linear_api_key');
+        const application_name = core.getInput('application_name');
+        const tag_prefix = core.getInput('tag_prefix');
+        const scope = core.getInput('scope');
+        const dependent_scopes_str = core.getInput('dependent_scopes');
+        const dependent_scopes = dependent_scopes_str
+            .trim()
+            .split(',')
+            .filter(dependent_scope => !!dependent_scope.trim());
+        if (!github.context.ref.startsWith(`refs/tags/${tag_prefix}`)) {
+            core.debug(`Git tag name (${github.context.ref.replace('refs/tags', '')}) isn't matched with tag_prefix config (${tag_prefix})`);
+            core.debug('Skipping action...');
+            return;
+        }
+        const { target_release_id, version, sha: [commit_from, commit_to] } = await findPreviousRelease(token, tag_prefix);
+        core.debug(`Found Previous Release: ${target_release_id}`);
+        core.debug(`Generate changelog from commit range: ${commit_from}...${commit_to}`);
+        const { url, commit_shas, messages } = await getCommits(token, commit_from, commit_to);
+        core.debug('Fetched commit messages');
+        const parsed_commits = messages.map(commit => parser.sync(commit, {
+            noteKeywords: ['Internal-Commit', 'BREAKING CHANGE']
+        }));
+        const type_message_map = dependent_scopes.reduce((result_messages, associated_project) => {
+            const sub_messages = getMessages(associated_project, parsed_commits);
+            for (const type of support_types) {
+                result_messages[type] = (result_messages[type] || []).concat(sub_messages[type] || []);
             }
-            const { target_release_id, version, sha: [commit_from, commit_to] } = yield findPreviousRelease(token, tag_prefix);
-            core.debug(`Found Previous Release: ${target_release_id}`);
-            core.debug(`Generate changelog from commit range: ${commit_from}...${commit_to}`);
-            const { url, commit_shas, messages } = yield getCommits(token, commit_from, commit_to);
-            core.debug('Fetched commit messages');
-            const parsed_commits = messages.map(commit => parser.sync(commit, {
-                noteKeywords: ['Internal-Commit', 'BREAKING CHANGE']
-            }));
-            const type_message_map = dependent_scopes.reduce((result_messages, associated_project) => {
-                const sub_messages = getMessages(associated_project, parsed_commits, true);
-                for (const type of support_types) {
-                    result_messages[type] = (result_messages[type] || []).concat(sub_messages[type] || []);
-                }
-                return result_messages;
-            }, getMessages(scope, parsed_commits));
-            const full_content = `
+            return result_messages;
+        }, getMessages(scope, parsed_commits));
+        const full_content = `
 ## ${application_name} ${version} (${getDateString()})
 Compare URL: ${url}
 
 ${getContent(type_message_map)}
 `.trim();
-            core.debug(full_content);
-            yield github.getOctokit(token).rest.repos.updateRelease(Object.assign(Object.assign({}, github.context.repo), { release_id: target_release_id, body: full_content }));
-            core.debug('Changelog posted to release body');
-            if (linear_api_key) {
-                yield markLinearIssuesAsDone(token, linear_api_key, commit_shas);
-            }
+        core.debug(full_content);
+        await github.getOctokit(token).rest.repos.updateRelease(Object.assign(Object.assign({}, github.context.repo), { release_id: target_release_id, body: full_content }));
+        core.debug('Changelog posted to release body');
+        if (linear_api_key) {
+            await markLinearIssuesAsDone(token, linear_api_key, commit_shas);
         }
-        catch (error) {
-            if (error instanceof Error)
-                core.setFailed(error);
-        }
-    });
+    }
+    catch (error) {
+        if (error instanceof Error)
+            core.setFailed(error);
+    }
 }
 run();
 
@@ -374,7 +362,6 @@ const file_command_1 = __nccwpck_require__(717);
 const utils_1 = __nccwpck_require__(5278);
 const os = __importStar(__nccwpck_require__(2037));
 const path = __importStar(__nccwpck_require__(1017));
-const uuid_1 = __nccwpck_require__(5840);
 const oidc_utils_1 = __nccwpck_require__(8041);
 /**
  * The code to exit an action
@@ -404,20 +391,9 @@ function exportVariable(name, val) {
     process.env[name] = convertedVal;
     const filePath = process.env['GITHUB_ENV'] || '';
     if (filePath) {
-        const delimiter = `ghadelimiter_${uuid_1.v4()}`;
-        // These should realistically never happen, but just in case someone finds a way to exploit uuid generation let's not allow keys or values that contain the delimiter.
-        if (name.includes(delimiter)) {
-            throw new Error(`Unexpected input: name should not contain the delimiter "${delimiter}"`);
-        }
-        if (convertedVal.includes(delimiter)) {
-            throw new Error(`Unexpected input: value should not contain the delimiter "${delimiter}"`);
-        }
-        const commandValue = `${name}<<${delimiter}${os.EOL}${convertedVal}${os.EOL}${delimiter}`;
-        file_command_1.issueCommand('ENV', commandValue);
+        return file_command_1.issueFileCommand('ENV', file_command_1.prepareKeyValueMessage(name, val));
     }
-    else {
-        command_1.issueCommand('set-env', { name }, convertedVal);
-    }
+    command_1.issueCommand('set-env', { name }, convertedVal);
 }
 exports.exportVariable = exportVariable;
 /**
@@ -435,7 +411,7 @@ exports.setSecret = setSecret;
 function addPath(inputPath) {
     const filePath = process.env['GITHUB_PATH'] || '';
     if (filePath) {
-        file_command_1.issueCommand('PATH', inputPath);
+        file_command_1.issueFileCommand('PATH', inputPath);
     }
     else {
         command_1.issueCommand('add-path', {}, inputPath);
@@ -475,7 +451,10 @@ function getMultilineInput(name, options) {
     const inputs = getInput(name, options)
         .split('\n')
         .filter(x => x !== '');
-    return inputs;
+    if (options && options.trimWhitespace === false) {
+        return inputs;
+    }
+    return inputs.map(input => input.trim());
 }
 exports.getMultilineInput = getMultilineInput;
 /**
@@ -508,8 +487,12 @@ exports.getBooleanInput = getBooleanInput;
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function setOutput(name, value) {
+    const filePath = process.env['GITHUB_OUTPUT'] || '';
+    if (filePath) {
+        return file_command_1.issueFileCommand('OUTPUT', file_command_1.prepareKeyValueMessage(name, value));
+    }
     process.stdout.write(os.EOL);
-    command_1.issueCommand('set-output', { name }, value);
+    command_1.issueCommand('set-output', { name }, utils_1.toCommandValue(value));
 }
 exports.setOutput = setOutput;
 /**
@@ -638,7 +621,11 @@ exports.group = group;
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function saveState(name, value) {
-    command_1.issueCommand('save-state', { name }, value);
+    const filePath = process.env['GITHUB_STATE'] || '';
+    if (filePath) {
+        return file_command_1.issueFileCommand('STATE', file_command_1.prepareKeyValueMessage(name, value));
+    }
+    command_1.issueCommand('save-state', { name }, utils_1.toCommandValue(value));
 }
 exports.saveState = saveState;
 /**
@@ -704,13 +691,14 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.issueCommand = void 0;
+exports.prepareKeyValueMessage = exports.issueFileCommand = void 0;
 // We use any as a valid input type
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const fs = __importStar(__nccwpck_require__(7147));
 const os = __importStar(__nccwpck_require__(2037));
+const uuid_1 = __nccwpck_require__(5840);
 const utils_1 = __nccwpck_require__(5278);
-function issueCommand(command, message) {
+function issueFileCommand(command, message) {
     const filePath = process.env[`GITHUB_${command}`];
     if (!filePath) {
         throw new Error(`Unable to find environment variable for file command ${command}`);
@@ -722,7 +710,22 @@ function issueCommand(command, message) {
         encoding: 'utf8'
     });
 }
-exports.issueCommand = issueCommand;
+exports.issueFileCommand = issueFileCommand;
+function prepareKeyValueMessage(key, value) {
+    const delimiter = `ghadelimiter_${uuid_1.v4()}`;
+    const convertedValue = utils_1.toCommandValue(value);
+    // These should realistically never happen, but just in case someone finds a
+    // way to exploit uuid generation let's not allow keys or values that contain
+    // the delimiter.
+    if (key.includes(delimiter)) {
+        throw new Error(`Unexpected input: name should not contain the delimiter "${delimiter}"`);
+    }
+    if (convertedValue.includes(delimiter)) {
+        throw new Error(`Unexpected input: value should not contain the delimiter "${delimiter}"`);
+    }
+    return `${key}<<${delimiter}${os.EOL}${convertedValue}${os.EOL}${delimiter}`;
+}
+exports.prepareKeyValueMessage = prepareKeyValueMessage;
 //# sourceMappingURL=file-command.js.map
 
 /***/ }),
@@ -1309,8 +1312,9 @@ exports.context = new Context.Context();
  * @param     token    the repo PAT or GITHUB_TOKEN
  * @param     options  other options to set
  */
-function getOctokit(token, options) {
-    return new utils_1.GitHub(utils_1.getOctokitOptions(token, options));
+function getOctokit(token, options, ...additionalPlugins) {
+    const GitHubWithPlugins = utils_1.GitHub.plugin(...additionalPlugins);
+    return new GitHubWithPlugins(utils_1.getOctokitOptions(token, options));
 }
 exports.getOctokit = getOctokit;
 //# sourceMappingURL=github.js.map
@@ -1392,7 +1396,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.getOctokitOptions = exports.GitHub = exports.context = void 0;
+exports.getOctokitOptions = exports.GitHub = exports.defaults = exports.context = void 0;
 const Context = __importStar(__nccwpck_require__(4087));
 const Utils = __importStar(__nccwpck_require__(7914));
 // octokit + plugins
@@ -1401,13 +1405,13 @@ const plugin_rest_endpoint_methods_1 = __nccwpck_require__(3044);
 const plugin_paginate_rest_1 = __nccwpck_require__(4193);
 exports.context = new Context.Context();
 const baseUrl = Utils.getApiBaseUrl();
-const defaults = {
+exports.defaults = {
     baseUrl,
     request: {
         agent: Utils.getProxyAgent(baseUrl)
     }
 };
-exports.GitHub = core_1.Octokit.plugin(plugin_rest_endpoint_methods_1.restEndpointMethods, plugin_paginate_rest_1.paginateRest).defaults(defaults);
+exports.GitHub = core_1.Octokit.plugin(plugin_rest_endpoint_methods_1.restEndpointMethods, plugin_paginate_rest_1.paginateRest).defaults(exports.defaults);
 /**
  * Convience function to correctly format Octokit Options to pass into the constructor.
  *
