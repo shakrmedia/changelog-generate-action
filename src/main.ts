@@ -146,16 +146,31 @@ async function getCommits(
     messages: string[];
 }> {
     const octokit = github.getOctokit(token);
-    const { data } = await octokit.rest.repos.compareCommitsWithBasehead({
-        ...github.context.repo,
-        basehead: `${from}...${to}`,
-        per_page: 100
-    });
+    const commits: unknown[] = [];
+    let url: string = '';
+    let page: number = 1;
+
+    while (true) {
+        const { data } = await octokit.rest.repos.compareCommitsWithBasehead({
+            ...github.context.repo,
+            basehead: `${from}...${to}`,
+            per_page: 100,
+            page
+        });
+
+        commits.push(...data.commits);
+
+        if (data.commits.length === 0) {
+            url = data.html_url;
+
+            break;
+        }
+    }
 
     return {
-        url: data.html_url,
-        commit_shas: data.commits.map(commit => commit.sha),
-        messages: data.commits.map(commit => commit.commit.message)
+        url,
+        commit_shas: commits.map(commit => commit.sha),
+        messages: commits.map(commit => commit.commit.message)
     };
 }
 
