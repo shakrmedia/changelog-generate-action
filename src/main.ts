@@ -146,7 +146,7 @@ async function getCommits(
     messages: string[];
 }> {
     const octokit = github.getOctokit(token);
-    const commits: unknown[] = [];
+    const commits: { html_url: string; commit: { message: string }; sha: string }[] = [];
     let url: string = '';
     let page: number = 1;
 
