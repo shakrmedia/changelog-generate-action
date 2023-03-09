@@ -165,6 +165,8 @@ async function getCommits(
 
             break;
         }
+
+        page++;
     }
 
     return {
