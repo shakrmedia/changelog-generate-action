@@ -119,6 +119,7 @@ async function getCommits(token, from, to) {
             url = data.html_url;
             break;
         }
+        page++;
     }
     return {
         url,
